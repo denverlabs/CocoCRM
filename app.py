@@ -5,7 +5,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import hashlib
 import hmac
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+import jwt
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -73,10 +74,58 @@ def verify_telegram_auth(auth_data):
 
     return calculated_hash == check_hash
 
+def generate_temp_token(user_id, username, expires_in_minutes=180):
+    """Generate a temporary JWT token for auto-login"""
+    expiration = datetime.utcnow() + timedelta(minutes=expires_in_minutes)
+
+    payload = {
+        'user_id': user_id,
+        'username': username,
+        'exp': expiration,
+        'iat': datetime.utcnow(),
+        'type': 'temp_login'
+    }
+
+    token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+    return token
+
+def verify_temp_token(token):
+    """Verify and decode a temporary JWT token"""
+    try:
+        payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+
+        if payload.get('type') != 'temp_login':
+            return None
+
+        return payload
+    except jwt.ExpiredSignatureError:
+        print("❌ Token expired")
+        return None
+    except jwt.InvalidTokenError as e:
+        print(f"❌ Invalid token: {e}")
+        return None
+
 @app.route('/')
 def index():
+    # Check for token in URL parameters
+    token = request.args.get('token')
+
+    if token and not current_user.is_authenticated:
+        payload = verify_temp_token(token)
+        if payload:
+            user = User.query.get(payload['user_id'])
+            if user:
+                login_user(user)
+                flash('Auto-login successful! Welcome back.', 'success')
+                return redirect(url_for('index'))  # Redirect to clean URL
+            else:
+                flash('Invalid token: user not found', 'error')
+        else:
+            flash('Invalid or expired token', 'error')
+
     if current_user.is_authenticated:
         return render_template('dashboard.html', user=current_user)
+
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -195,6 +244,98 @@ def telegram_auth():
         import traceback
         print(traceback.format_exc())
         print("=" * 80)
+        return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
+
+@app.route('/api/telegram/generate-token', methods=['POST'])
+def generate_token_endpoint():
+    """
+    Generate a temporary login token for authorized users (like Kimi AI)
+
+    Expected JSON payload:
+    {
+        "telegram_id": "123456789",  // or
+        "username": "kimi_claw",
+        "api_key": "secret_key"      // optional authentication
+    }
+
+    Returns:
+    {
+        "success": true,
+        "token": "jwt_token_here",
+        "url": "https://cococrm.onrender.com/?token=jwt_token_here",
+        "expires_in": 180
+    }
+    """
+    try:
+        data = request.json
+
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+
+        # Get authorization method
+        telegram_id = data.get('telegram_id')
+        username = data.get('username')
+        api_key = data.get('api_key')
+
+        # Check for API key authentication (recommended for bot access)
+        expected_api_key = os.environ.get('TELEGRAM_API_KEY', 'dev-api-key-change-me')
+        if api_key and api_key == expected_api_key:
+            # API key is valid, find or create a service user
+            user = User.query.filter_by(username='kimi_ai_agent').first()
+
+            if not user:
+                # Create service user for Kimi
+                user = User(
+                    username='kimi_ai_agent',
+                    first_name='Kimi',
+                    last_name='AI Agent',
+                    telegram_id=telegram_id if telegram_id else None,
+                    telegram_username=username if username else None
+                )
+                db.session.add(user)
+                db.session.commit()
+                print(f"✅ Created service user: kimi_ai_agent")
+
+        elif telegram_id:
+            # Find user by telegram_id
+            user = User.query.filter_by(telegram_id=str(telegram_id)).first()
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found with this Telegram ID'}), 404
+
+        elif username:
+            # Find user by username
+            user = User.query.filter_by(username=username).first()
+            if not user:
+                return jsonify({'success': False, 'message': 'User not found with this username'}), 404
+
+        else:
+            return jsonify({'success': False, 'message': 'Must provide telegram_id, username, or api_key'}), 400
+
+        # Generate temporary token
+        token = generate_temp_token(user.id, user.username, expires_in_minutes=180)
+
+        # Get base URL (support both local and production)
+        base_url = os.environ.get('BASE_URL', 'https://cococrm.onrender.com')
+        login_url = f"{base_url}/?token={token}"
+
+        print(f"✅ Generated token for user: {user.username}")
+        print(f"🔗 Login URL: {login_url}")
+
+        return jsonify({
+            'success': True,
+            'token': token,
+            'url': login_url,
+            'expires_in': 180,
+            'user': {
+                'id': user.id,
+                'username': user.username
+            }
+        })
+
+    except Exception as e:
+        print(f"💥 Error generating token: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
 
 @app.route('/logout')
