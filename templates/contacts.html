@@ -114,6 +114,95 @@
             transform: translateY(-2px);
         }
 
+        .filters-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .filters-row {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .filter-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            width: 100%;
+            padding: 10px 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn-filter {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .btn-filter:hover {
+            opacity: 0.9;
+        }
+
+        .btn-clear {
+            padding: 10px 20px;
+            background: #f5f5f5;
+            color: #666;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .tag-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background: #f0f0f0;
+            border-radius: 12px;
+            font-size: 11px;
+            margin-right: 5px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .tag-badge:hover {
+            background: #e0e0e0;
+        }
+
         .contacts-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -325,7 +414,46 @@
 
         <div class="page-header">
             <h1 class="page-title">📇 Contacts ({{ contacts|length }})</h1>
-            <a href="{{ url_for('add_contact') }}" class="btn-primary">+ Add Contact</a>
+            <div style="display: flex; gap: 10px;">
+                <a href="{{ url_for('export_contacts') }}" class="btn-clear" style="padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">📥 Export CSV</a>
+                <a href="{{ url_for('add_contact') }}" class="btn-primary">+ Add Contact</a>
+            </div>
+        </div>
+
+        <div class="filters-section">
+            <form method="GET" action="{{ url_for('contacts') }}">
+                <div class="filters-row">
+                    <div class="filter-group">
+                        <label>Search</label>
+                        <input type="text" name="search" placeholder="Name, email, company, phone..." value="{{ search or '' }}">
+                    </div>
+
+                    <div class="filter-group" style="max-width: 200px;">
+                        <label>Filter by Tag</label>
+                        <select name="tag">
+                            <option value="">All Tags</option>
+                            {% for tag in all_tags %}
+                            <option value="{{ tag }}" {% if tag_filter == tag %}selected{% endif %}>{{ tag }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="filter-group" style="max-width: 200px;">
+                        <label>Sort By</label>
+                        <select name="sort">
+                            <option value="date_desc" {% if sort_by == 'date_desc' %}selected{% endif %}>Newest First</option>
+                            <option value="date_asc" {% if sort_by == 'date_asc' %}selected{% endif %}>Oldest First</option>
+                            <option value="name_asc" {% if sort_by == 'name_asc' %}selected{% endif %}>Name (A-Z)</option>
+                            <option value="name_desc" {% if sort_by == 'name_desc' %}selected{% endif %}>Name (Z-A)</option>
+                        </select>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; align-items: flex-end;">
+                        <button type="submit" class="btn-filter">🔍 Filter</button>
+                        <a href="{{ url_for('contacts') }}" class="btn-clear">Clear</a>
+                    </div>
+                </div>
+            </form>
         </div>
 
         {% if contacts %}

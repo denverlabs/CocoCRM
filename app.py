@@ -1,4 +1,6 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, Response
+import csv
+import io
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -193,6 +195,50 @@ def verify_temp_token(token):
     except jwt.InvalidTokenError as e:
         print(f"❌ Invalid token: {e}")
         return None
+
+def run_automations(trigger, user_id, contact_id=None, deal_id=None, extra_data=None):
+    """Execute active automations matching the given trigger"""
+    try:
+        automations = Automation.query.filter_by(user_id=user_id, trigger=trigger, active=True).all()
+        for auto in automations:
+            try:
+                if auto.action == 'create_task':
+                    task = Task(
+                        user_id=user_id,
+                        contact_id=contact_id,
+                        deal_id=deal_id,
+                        title=f'[Auto] {auto.name}',
+                        description=f'Automatically created by automation: {auto.name}',
+                        priority='medium'
+                    )
+                    db.session.add(task)
+                elif auto.action == 'send_notification':
+                    log_activity('note', f'[Automation] {auto.name} triggered', contact_id=contact_id, deal_id=deal_id, user_id=user_id)
+                elif auto.action == 'send_email':
+                    log_activity('email', f'[Automation] Email trigger: {auto.name}', contact_id=contact_id, deal_id=deal_id, user_id=user_id)
+                db.session.commit()
+                print(f"✅ Automation executed: {auto.name}")
+            except Exception as e:
+                print(f"⚠️ Automation '{auto.name}' failed: {e}")
+                db.session.rollback()
+    except Exception as e:
+        print(f"⚠️ Error checking automations: {e}")
+
+def log_activity(activity_type, description, contact_id=None, deal_id=None, user_id=None):
+    """Helper function to log activities"""
+    try:
+        activity = Activity(
+            activity_type=activity_type,
+            description=description,
+            contact_id=contact_id,
+            deal_id=deal_id,
+            user_id=user_id or (current_user.id if current_user.is_authenticated else None)
+        )
+        db.session.add(activity)
+        db.session.commit()
+    except Exception as e:
+        print(f"⚠️ Failed to log activity: {e}")
+        db.session.rollback()
 
 @app.route('/')
 def index():
@@ -600,8 +646,49 @@ def dashboard():
 @app.route('/contacts')
 @login_required
 def contacts():
-    contacts = Contact.query.filter_by(user_id=current_user.id).order_by(Contact.created_at.desc()).all()
-    return render_template('contacts.html', contacts=contacts, user=current_user)
+    search = request.args.get('search', '').strip()
+    tag_filter = request.args.get('tag', '').strip()
+    sort_by = request.args.get('sort', 'date_desc')
+
+    query = Contact.query.filter_by(user_id=current_user.id)
+
+    if search:
+        search_pattern = f'%{search}%'
+        query = query.filter(
+            db.or_(
+                Contact.name.ilike(search_pattern),
+                Contact.email.ilike(search_pattern),
+                Contact.company.ilike(search_pattern),
+                Contact.phone.ilike(search_pattern)
+            )
+        )
+
+    if tag_filter:
+        query = query.filter(Contact.tags.ilike(f'%{tag_filter}%'))
+
+    if sort_by == 'name_asc':
+        query = query.order_by(Contact.name.asc())
+    elif sort_by == 'name_desc':
+        query = query.order_by(Contact.name.desc())
+    elif sort_by == 'date_asc':
+        query = query.order_by(Contact.created_at.asc())
+    else:
+        query = query.order_by(Contact.created_at.desc())
+
+    contacts = query.all()
+
+    all_tags = set()
+    for contact in Contact.query.filter_by(user_id=current_user.id).all():
+        if contact.tags:
+            all_tags.update([t.strip() for t in contact.tags.split(',')])
+
+    return render_template('contacts.html',
+                         contacts=contacts,
+                         user=current_user,
+                         search=search,
+                         tag_filter=tag_filter,
+                         sort_by=sort_by,
+                         all_tags=sorted(all_tags))
 
 @app.route('/contacts/add', methods=['GET', 'POST'])
 @login_required
@@ -621,19 +708,8 @@ def add_contact():
             db.session.add(contact)
             db.session.commit()
 
-            # Log activity
-            try:
-                activity = Activity(
-                    user_id=current_user.id,
-                    contact_id=contact.id,
-                    activity_type='note',
-                    description=f'Contact created: {contact.name}'
-                )
-                db.session.add(activity)
-                db.session.commit()
-            except Exception as e:
-                print(f"Warning: Could not log activity: {str(e)}")
-                # Continue anyway, activity logging is not critical
+            log_activity('note', f'Contact created: {contact.name}', contact_id=contact.id)
+            run_automations('new_contact', current_user.id, contact_id=contact.id)
 
             flash('Contact added successfully!', 'success')
             return redirect(url_for('contacts'))
@@ -661,6 +737,8 @@ def edit_contact(contact_id):
             contact.notes = request.form.get('notes')
             contact.tags = request.form.get('tags')
             db.session.commit()
+
+            log_activity('note', f'Contact updated: {contact.name}', contact_id=contact.id)
 
             flash('Contact updated successfully!', 'success')
             return redirect(url_for('contacts'))
@@ -698,6 +776,61 @@ def view_contact(contact_id):
 
     return render_template('contact_detail.html', contact=contact, activities=activities, deals=deals, tasks=tasks, user=current_user)
 
+@app.route('/contacts/export')
+@login_required
+def export_contacts():
+    contacts = Contact.query.filter_by(user_id=current_user.id).order_by(Contact.name).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Name', 'Email', 'Phone', 'Company', 'Position', 'Tags', 'Created At'])
+
+    for contact in contacts:
+        writer.writerow([
+            contact.name,
+            contact.email or '',
+            contact.phone or '',
+            contact.company or '',
+            contact.position or '',
+            contact.tags or '',
+            contact.created_at.strftime('%Y-%m-%d %H:%M') if contact.created_at else ''
+        ])
+
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=contacts_export.csv'}
+    )
+
+@app.route('/deals/export')
+@login_required
+def export_deals():
+    deals = Deal.query.filter_by(user_id=current_user.id).order_by(Deal.created_at.desc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Title', 'Value', 'Stage', 'Probability', 'Contact', 'Expected Close', 'Created At'])
+
+    for deal in deals:
+        contact_name = deal.contact.name if deal.contact else ''
+        writer.writerow([
+            deal.title,
+            deal.value,
+            deal.stage,
+            deal.probability,
+            contact_name,
+            deal.expected_close_date.strftime('%Y-%m-%d') if deal.expected_close_date else '',
+            deal.created_at.strftime('%Y-%m-%d %H:%M') if deal.created_at else ''
+        ])
+
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=deals_export.csv'}
+    )
+
 # ========== PIPELINE ROUTES ==========
 @app.route('/pipeline')
 @login_required
@@ -734,6 +867,8 @@ def add_deal():
             db.session.add(deal)
             db.session.commit()
 
+            log_activity('note', f'Deal created: {deal.title} (${deal.value:,.2f})', contact_id=deal.contact_id, deal_id=deal.id)
+
             flash('Deal added successfully!', 'success')
             return redirect(url_for('pipeline'))
         except Exception as e:
@@ -763,6 +898,8 @@ def edit_deal(deal_id):
 
         db.session.commit()
 
+        log_activity('note', f'Deal updated: {deal.title}', contact_id=deal.contact_id, deal_id=deal.id)
+
         flash('Deal updated successfully!', 'success')
         return redirect(url_for('pipeline'))
 
@@ -776,8 +913,11 @@ def update_deal_stage(deal_id):
     new_stage = request.json.get('stage')
 
     if new_stage in ['lead', 'qualified', 'proposal', 'negotiation', 'closed-won', 'closed-lost']:
+        old_stage = deal.stage
         deal.stage = new_stage
         db.session.commit()
+        log_activity('note', f'Deal "{deal.title}" moved from {old_stage} to {new_stage}', contact_id=deal.contact_id, deal_id=deal.id)
+        run_automations('deal_stage_change', current_user.id, contact_id=deal.contact_id, deal_id=deal.id)
         return jsonify({'success': True})
 
     return jsonify({'success': False}), 400
@@ -786,6 +926,9 @@ def update_deal_stage(deal_id):
 @login_required
 def delete_deal(deal_id):
     deal = Deal.query.filter_by(id=deal_id, user_id=current_user.id).first_or_404()
+    deal_title = deal.title
+    Activity.query.filter_by(deal_id=deal_id).delete()
+    Task.query.filter_by(deal_id=deal_id).delete()
     db.session.delete(deal)
     db.session.commit()
 
@@ -814,6 +957,51 @@ def analytics():
     # Win rate
     win_rate = (won_deals / total_deals * 100) if total_deals > 0 else 0
 
+    # Monthly trends - contacts and deals created per month (last 6 months)
+    import calendar
+    monthly_labels = []
+    monthly_contacts = []
+    monthly_deals = []
+    monthly_revenue = []
+    today = datetime.utcnow()
+
+    for i in range(5, -1, -1):
+        month = today.month - i
+        year = today.year
+        while month <= 0:
+            month += 12
+            year -= 1
+        month_start = datetime(year, month, 1)
+        if month == 12:
+            month_end = datetime(year + 1, 1, 1)
+        else:
+            month_end = datetime(year, month + 1, 1)
+
+        monthly_labels.append(calendar.month_abbr[month])
+        monthly_contacts.append(Contact.query.filter(
+            Contact.user_id == current_user.id,
+            Contact.created_at >= month_start,
+            Contact.created_at < month_end
+        ).count())
+        monthly_deals.append(Deal.query.filter(
+            Deal.user_id == current_user.id,
+            Deal.created_at >= month_start,
+            Deal.created_at < month_end
+        ).count())
+        monthly_revenue.append(float(db.session.query(db.func.sum(Deal.value)).filter(
+            Deal.user_id == current_user.id,
+            Deal.stage == 'closed-won',
+            Deal.created_at >= month_start,
+            Deal.created_at < month_end
+        ).scalar() or 0))
+
+    # Recent activities
+    recent_activities = Activity.query.filter_by(user_id=current_user.id).order_by(Activity.created_at.desc()).limit(10).all()
+
+    # Tasks stats
+    pending_tasks = Task.query.filter_by(user_id=current_user.id, completed=False).count()
+    completed_tasks = Task.query.filter_by(user_id=current_user.id, completed=True).count()
+
     return render_template('analytics.html',
                          user=current_user,
                          total_contacts=total_contacts,
@@ -823,7 +1011,14 @@ def analytics():
                          total_revenue=total_revenue,
                          pipeline_value=pipeline_value,
                          deals_by_stage=deals_by_stage,
-                         win_rate=win_rate)
+                         win_rate=win_rate,
+                         monthly_labels=monthly_labels,
+                         monthly_contacts=monthly_contacts,
+                         monthly_deals=monthly_deals,
+                         monthly_revenue=monthly_revenue,
+                         recent_activities=recent_activities,
+                         pending_tasks=pending_tasks,
+                         completed_tasks=completed_tasks)
 
 # ========== TASKS ROUTES ==========
 @app.route('/tasks')
@@ -853,6 +1048,8 @@ def add_task():
     db.session.add(task)
     db.session.commit()
 
+    log_activity('note', f'Task created: {task.title}', contact_id=task.contact_id, deal_id=task.deal_id)
+
     flash('Task created successfully!', 'success')
     return redirect(url_for('tasks'))
 
@@ -862,6 +1059,9 @@ def toggle_task(task_id):
     task = Task.query.filter_by(id=task_id, user_id=current_user.id).first_or_404()
     task.completed = not task.completed
     db.session.commit()
+
+    status = 'completed' if task.completed else 'reopened'
+    log_activity('note', f'Task {status}: {task.title}', contact_id=task.contact_id, deal_id=task.deal_id)
 
     return jsonify({'success': True, 'completed': task.completed})
 

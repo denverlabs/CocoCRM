@@ -222,9 +222,51 @@
             </div>
 
             <div class="chart-card full-width">
+                <h2 class="chart-title">Monthly Growth Trend</h2>
+                <div class="chart-container">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h2 class="chart-title">Monthly Revenue</h2>
+                <div class="chart-container">
+                    <canvas id="revenueChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h2 class="chart-title">Task Completion</h2>
+                <div class="chart-container">
+                    <canvas id="taskChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card full-width">
                 <h2 class="chart-title">Pipeline Overview</h2>
                 <div class="chart-container">
                     <canvas id="pipelineChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card full-width">
+                <h2 class="chart-title">Recent Activity</h2>
+                <div style="max-height: 300px; overflow-y: auto;">
+                    {% if recent_activities %}
+                    {% for activity in recent_activities %}
+                    <div style="padding: 12px 0; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 36px; height: 36px; border-radius: 50%; background: #f0f0ff; display: flex; align-items: center; justify-content: center; font-size: 16px;">
+                            {% if 'created' in activity.description %}🆕{% elif 'updated' in activity.description %}✏️{% elif 'deleted' in activity.description %}🗑️{% elif 'moved' in activity.description %}➡️{% elif 'completed' in activity.description %}✅{% else %}📝{% endif %}
+                        </div>
+                        <div style="flex: 1;">
+                            <div style="font-size: 14px; color: #333;">{{ activity.description }}</div>
+                            <div style="font-size: 12px; color: #999;">{{ activity.created_at.strftime('%b %d, %Y %H:%M') }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <div style="text-align: center; padding: 40px; color: #999;">No recent activities yet</div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -299,6 +341,75 @@
                         }
                     }
                 }
+            }
+        });
+
+        // Monthly Growth Trend Line Chart
+        const trendCtx = document.getElementById('trendChart').getContext('2d');
+        new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: {{ monthly_labels|tojson }},
+                datasets: [{
+                    label: 'Contacts',
+                    data: {{ monthly_contacts|tojson }},
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }, {
+                    label: 'Deals',
+                    data: {{ monthly_deals|tojson }},
+                    borderColor: '#f093fb',
+                    backgroundColor: 'rgba(240, 147, 251, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+            }
+        });
+
+        // Monthly Revenue Bar Chart
+        const revenueCtx = document.getElementById('revenueChart').getContext('2d');
+        new Chart(revenueCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ monthly_labels|tojson }},
+                datasets: [{
+                    label: 'Revenue',
+                    data: {{ monthly_revenue|tojson }},
+                    backgroundColor: 'rgba(76, 175, 80, 0.7)',
+                    borderColor: '#4caf50',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, ticks: { callback: v => '$' + v.toLocaleString() } } }
+            }
+        });
+
+        // Task Completion Doughnut
+        const taskCtx = document.getElementById('taskChart').getContext('2d');
+        new Chart(taskCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Completed', 'Pending'],
+                datasets: [{
+                    data: [{{ completed_tasks }}, {{ pending_tasks }}],
+                    backgroundColor: ['#4caf50', '#ff9800'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } }
             }
         });
 
