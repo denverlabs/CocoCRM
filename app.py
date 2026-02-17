@@ -576,31 +576,42 @@ def contacts():
 @login_required
 def add_contact():
     if request.method == 'POST':
-        contact = Contact(
-            user_id=current_user.id,
-            name=request.form.get('name'),
-            email=request.form.get('email'),
-            phone=request.form.get('phone'),
-            company=request.form.get('company'),
-            position=request.form.get('position'),
-            notes=request.form.get('notes'),
-            tags=request.form.get('tags')
-        )
-        db.session.add(contact)
-        db.session.commit()
+        try:
+            contact = Contact(
+                user_id=current_user.id,
+                name=request.form.get('name'),
+                email=request.form.get('email'),
+                phone=request.form.get('phone'),
+                company=request.form.get('company'),
+                position=request.form.get('position'),
+                notes=request.form.get('notes'),
+                tags=request.form.get('tags')
+            )
+            db.session.add(contact)
+            db.session.commit()
 
-        # Log activity
-        activity = Activity(
-            user_id=current_user.id,
-            contact_id=contact.id,
-            activity_type='note',
-            description=f'Contact created: {contact.name}'
-        )
-        db.session.add(activity)
-        db.session.commit()
+            # Log activity
+            try:
+                activity = Activity(
+                    user_id=current_user.id,
+                    contact_id=contact.id,
+                    activity_type='note',
+                    description=f'Contact created: {contact.name}'
+                )
+                db.session.add(activity)
+                db.session.commit()
+            except Exception as e:
+                print(f"Warning: Could not log activity: {str(e)}")
+                # Continue anyway, activity logging is not critical
 
-        flash('Contact added successfully!', 'success')
-        return redirect(url_for('contacts'))
+            flash('Contact added successfully!', 'success')
+            return redirect(url_for('contacts'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding contact: {str(e)}', 'error')
+            print(f"Error in add_contact: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     return render_template('contact_form.html', contact=None, user=current_user)
 
@@ -610,17 +621,22 @@ def edit_contact(contact_id):
     contact = Contact.query.filter_by(id=contact_id, user_id=current_user.id).first_or_404()
 
     if request.method == 'POST':
-        contact.name = request.form.get('name')
-        contact.email = request.form.get('email')
-        contact.phone = request.form.get('phone')
-        contact.company = request.form.get('company')
-        contact.position = request.form.get('position')
-        contact.notes = request.form.get('notes')
-        contact.tags = request.form.get('tags')
-        db.session.commit()
+        try:
+            contact.name = request.form.get('name')
+            contact.email = request.form.get('email')
+            contact.phone = request.form.get('phone')
+            contact.company = request.form.get('company')
+            contact.position = request.form.get('position')
+            contact.notes = request.form.get('notes')
+            contact.tags = request.form.get('tags')
+            db.session.commit()
 
-        flash('Contact updated successfully!', 'success')
-        return redirect(url_for('contacts'))
+            flash('Contact updated successfully!', 'success')
+            return redirect(url_for('contacts'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating contact: {str(e)}', 'error')
+            print(f"Error in edit_contact: {str(e)}")
 
     return render_template('contact_form.html', contact=contact, user=current_user)
 
@@ -661,26 +677,31 @@ def pipeline():
 @login_required
 def add_deal():
     if request.method == 'POST':
-        deal = Deal(
-            user_id=current_user.id,
-            contact_id=request.form.get('contact_id') or None,
-            title=request.form.get('title'),
-            value=float(request.form.get('value', 0)),
-            stage=request.form.get('stage', 'lead'),
-            probability=int(request.form.get('probability', 0)),
-            description=request.form.get('description')
-        )
+        try:
+            deal = Deal(
+                user_id=current_user.id,
+                contact_id=request.form.get('contact_id') or None,
+                title=request.form.get('title'),
+                value=float(request.form.get('value', 0)),
+                stage=request.form.get('stage', 'lead'),
+                probability=int(request.form.get('probability', 0)),
+                description=request.form.get('description')
+            )
 
-        # Parse expected close date
-        close_date_str = request.form.get('expected_close_date')
-        if close_date_str:
-            deal.expected_close_date = datetime.strptime(close_date_str, '%Y-%m-%d').date()
+            # Parse expected close date
+            close_date_str = request.form.get('expected_close_date')
+            if close_date_str:
+                deal.expected_close_date = datetime.strptime(close_date_str, '%Y-%m-%d').date()
 
-        db.session.add(deal)
-        db.session.commit()
+            db.session.add(deal)
+            db.session.commit()
 
-        flash('Deal added successfully!', 'success')
-        return redirect(url_for('pipeline'))
+            flash('Deal added successfully!', 'success')
+            return redirect(url_for('pipeline'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error adding deal: {str(e)}', 'error')
+            print(f"Error in add_deal: {str(e)}")
 
     contacts = Contact.query.filter_by(user_id=current_user.id).all()
     return render_template('deal_form.html', deal=None, contacts=contacts, user=current_user)
