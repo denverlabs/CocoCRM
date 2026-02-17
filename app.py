@@ -14,6 +14,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Telegram Bot Token (set this in environment variables)
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_BOT_USERNAME = os.environ.get('TELEGRAM_BOT_USERNAME', '')
 
 db = SQLAlchemy(app)
 login_manager = LoginManager()
@@ -86,7 +87,7 @@ def login():
         else:
             flash('Invalid username or password', 'error')
 
-    return render_template('login.html', telegram_bot_token=TELEGRAM_BOT_TOKEN)
+    return render_template('login.html', telegram_bot_token=TELEGRAM_BOT_TOKEN, telegram_bot_username=TELEGRAM_BOT_USERNAME)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
