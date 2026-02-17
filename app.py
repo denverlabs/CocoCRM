@@ -1,10 +1,3 @@
-Sí, pero son varios archivos. Te los paso todos juntos para que copies y pegues:
-
-
-📁 Archivos a crear en GitHub
-
-1. app.py
-
 from flask import Flask, render_template, request, jsonify
 import json
 import os
@@ -95,6 +88,3 @@ Primero creá la carpeta templates, después el archivo index.html dentro:
     </div>
 </body>
 </html>
-
-
-¿Creás estos 4 archivos en GitHub? Después conectamos con Render.
