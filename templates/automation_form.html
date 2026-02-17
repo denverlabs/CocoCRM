@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ 'Edit' if automation else 'Add' }} Automation - CocoCRM</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+        .header {
+            background: white;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            padding: 0 40px;
+            height: 70px;
+            display: flex;
+            align-items: center;
+        }
+        .logo { font-size: 24px; font-weight: 700; color: #667eea; text-decoration: none; }
+        .container { max-width: 700px; margin: 40px auto; padding: 0 20px; }
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+        .page-title { font-size: 28px; font-weight: 700; color: #333; margin-bottom: 10px; }
+        .page-subtitle { color: #999; margin-bottom: 30px; }
+        .form-group { margin-bottom: 25px; }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .form-actions { display: flex; gap: 15px; margin-top: 30px; padding-top: 30px; border-top: 1px solid #f0f0f0; }
+        .btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            flex: 1;
+        }
+        .btn-secondary { background: #f5f5f5; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="{{ url_for('index') }}" class="logo">📇 CocoCRM</a>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h1 class="page-title">{{ '✏️ Edit Automation' if automation else '⚡ Create Automation' }}</h1>
+            <p class="page-subtitle">{{ 'Update automation rule' if automation else 'Set up a new automation workflow' }}</p>
+
+            <form method="POST">
+                <div class="form-group">
+                    <label for="name">Automation Name *</label>
+                    <input type="text" id="name" name="name" value="{{ automation.name if automation else '' }}" required placeholder="e.g., Welcome new contacts">
+                </div>
+
+                <div class="form-group">
+                    <label for="trigger">Trigger Event *</label>
+                    <select id="trigger" name="trigger" required>
+                        <option value="">Select trigger...</option>
+                        <option value="new_contact" {% if automation and automation.trigger == 'new_contact' %}selected{% endif %}>New Contact Created</option>
+                        <option value="deal_stage_change" {% if automation and automation.trigger == 'deal_stage_change' %}selected{% endif %}>Deal Stage Changed</option>
+                        <option value="task_due" {% if automation and automation.trigger == 'task_due' %}selected{% endif %}>Task Due Date Approaching</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="action">Action *</label>
+                    <select id="action" name="action" required>
+                        <option value="">Select action...</option>
+                        <option value="send_email" {% if automation and automation.action == 'send_email' %}selected{% endif %}>Send Email</option>
+                        <option value="create_task" {% if automation and automation.action == 'create_task' %}selected{% endif %}>Create Task</option>
+                        <option value="send_notification" {% if automation and automation.action == 'send_notification' %}selected{% endif %}>Send Notification</option>
+                    </select>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">{{ 'Update' if automation else 'Create' }} Automation</button>
+                    <a href="{{ url_for('automations') }}" class="btn btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

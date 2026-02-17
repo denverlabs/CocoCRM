@@ -43,6 +43,95 @@ class User(UserMixin, db.Model):
             return False
         return check_password_hash(self.password_hash, password)
 
+# Contact Model
+class Contact(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(120), nullable=True)
+    phone = db.Column(db.String(50), nullable=True)
+    company = db.Column(db.String(200), nullable=True)
+    position = db.Column(db.String(200), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    tags = db.Column(db.String(500), nullable=True)  # Comma-separated tags
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship('User', backref='contacts')
+
+# Deal Model (Sales Pipeline)
+class Deal(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    contact_id = db.Column(db.Integer, db.ForeignKey('contact.id'), nullable=True)
+    title = db.Column(db.String(200), nullable=False)
+    value = db.Column(db.Float, default=0.0)
+    stage = db.Column(db.String(50), default='lead')  # lead, qualified, proposal, negotiation, closed-won, closed-lost
+    probability = db.Column(db.Integer, default=0)  # 0-100%
+    expected_close_date = db.Column(db.Date, nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship('User', backref='deals')
+    contact = db.relationship('Contact', backref='deals')
+
+# Task Model (for automation and reminders)
+class Task(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    contact_id = db.Column(db.Integer, db.ForeignKey('contact.id'), nullable=True)
+    deal_id = db.Column(db.Integer, db.ForeignKey('deal.id'), nullable=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    due_date = db.Column(db.DateTime, nullable=True)
+    completed = db.Column(db.Boolean, default=False)
+    priority = db.Column(db.String(20), default='medium')  # low, medium, high
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='tasks')
+    contact = db.relationship('Contact', backref='tasks')
+    deal = db.relationship('Deal', backref='tasks')
+
+# Activity Log
+class Activity(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    contact_id = db.Column(db.Integer, db.ForeignKey('contact.id'), nullable=True)
+    deal_id = db.Column(db.Integer, db.ForeignKey('deal.id'), nullable=True)
+    activity_type = db.Column(db.String(50), nullable=False)  # email, call, meeting, note
+    description = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='activities')
+    contact = db.relationship('Contact', backref='activities')
+    deal = db.relationship('Deal', backref='activities')
+
+# Notification Settings
+class NotificationSettings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
+    email_notifications = db.Column(db.Boolean, default=True)
+    telegram_notifications = db.Column(db.Boolean, default=True)
+    task_reminders = db.Column(db.Boolean, default=True)
+    deal_updates = db.Column(db.Boolean, default=True)
+    daily_summary = db.Column(db.Boolean, default=False)
+
+    user = db.relationship('User', backref='notification_settings')
+
+# Automation Rules
+class Automation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    trigger = db.Column(db.String(100), nullable=False)  # new_contact, deal_stage_change, task_due
+    action = db.Column(db.String(100), nullable=False)  # send_email, create_task, send_notification
+    active = db.Column(db.Boolean, default=True)
+    config = db.Column(db.Text, nullable=True)  # JSON config for the automation
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='automations')
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -462,7 +551,329 @@ def debug_status():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    return render_template('dashboard.html', user=current_user)
+    # Get statistics for dashboard
+    total_contacts = Contact.query.filter_by(user_id=current_user.id).count()
+    total_deals = Deal.query.filter_by(user_id=current_user.id).count()
+    active_deals = Deal.query.filter_by(user_id=current_user.id).filter(Deal.stage.in_(['lead', 'qualified', 'proposal', 'negotiation'])).count()
+    total_revenue = db.session.query(db.func.sum(Deal.value)).filter_by(user_id=current_user.id, stage='closed-won').scalar() or 0
+    completed_tasks = Task.query.filter_by(user_id=current_user.id, completed=True).count()
+
+    return render_template('dashboard.html',
+                         user=current_user,
+                         total_contacts=total_contacts,
+                         active_deals=active_deals,
+                         total_revenue=total_revenue,
+                         completed_tasks=completed_tasks)
+
+# ========== CONTACTS ROUTES ==========
+@app.route('/contacts')
+@login_required
+def contacts():
+    contacts = Contact.query.filter_by(user_id=current_user.id).order_by(Contact.created_at.desc()).all()
+    return render_template('contacts.html', contacts=contacts, user=current_user)
+
+@app.route('/contacts/add', methods=['GET', 'POST'])
+@login_required
+def add_contact():
+    if request.method == 'POST':
+        contact = Contact(
+            user_id=current_user.id,
+            name=request.form.get('name'),
+            email=request.form.get('email'),
+            phone=request.form.get('phone'),
+            company=request.form.get('company'),
+            position=request.form.get('position'),
+            notes=request.form.get('notes'),
+            tags=request.form.get('tags')
+        )
+        db.session.add(contact)
+        db.session.commit()
+
+        # Log activity
+        activity = Activity(
+            user_id=current_user.id,
+            contact_id=contact.id,
+            activity_type='note',
+            description=f'Contact created: {contact.name}'
+        )
+        db.session.add(activity)
+        db.session.commit()
+
+        flash('Contact added successfully!', 'success')
+        return redirect(url_for('contacts'))
+
+    return render_template('contact_form.html', contact=None, user=current_user)
+
+@app.route('/contacts/edit/<int:contact_id>', methods=['GET', 'POST'])
+@login_required
+def edit_contact(contact_id):
+    contact = Contact.query.filter_by(id=contact_id, user_id=current_user.id).first_or_404()
+
+    if request.method == 'POST':
+        contact.name = request.form.get('name')
+        contact.email = request.form.get('email')
+        contact.phone = request.form.get('phone')
+        contact.company = request.form.get('company')
+        contact.position = request.form.get('position')
+        contact.notes = request.form.get('notes')
+        contact.tags = request.form.get('tags')
+        db.session.commit()
+
+        flash('Contact updated successfully!', 'success')
+        return redirect(url_for('contacts'))
+
+    return render_template('contact_form.html', contact=contact, user=current_user)
+
+@app.route('/contacts/delete/<int:contact_id>', methods=['POST'])
+@login_required
+def delete_contact(contact_id):
+    contact = Contact.query.filter_by(id=contact_id, user_id=current_user.id).first_or_404()
+    db.session.delete(contact)
+    db.session.commit()
+
+    flash('Contact deleted successfully!', 'success')
+    return redirect(url_for('contacts'))
+
+@app.route('/contacts/<int:contact_id>')
+@login_required
+def view_contact(contact_id):
+    contact = Contact.query.filter_by(id=contact_id, user_id=current_user.id).first_or_404()
+    activities = Activity.query.filter_by(contact_id=contact_id).order_by(Activity.created_at.desc()).all()
+    deals = Deal.query.filter_by(contact_id=contact_id).all()
+    tasks = Task.query.filter_by(contact_id=contact_id).order_by(Task.due_date).all()
+
+    return render_template('contact_detail.html', contact=contact, activities=activities, deals=deals, tasks=tasks, user=current_user)
+
+# ========== PIPELINE ROUTES ==========
+@app.route('/pipeline')
+@login_required
+def pipeline():
+    # Get deals grouped by stage
+    stages = ['lead', 'qualified', 'proposal', 'negotiation', 'closed-won', 'closed-lost']
+    deals_by_stage = {}
+
+    for stage in stages:
+        deals_by_stage[stage] = Deal.query.filter_by(user_id=current_user.id, stage=stage).order_by(Deal.created_at.desc()).all()
+
+    return render_template('pipeline.html', deals_by_stage=deals_by_stage, stages=stages, user=current_user)
+
+@app.route('/deals/add', methods=['GET', 'POST'])
+@login_required
+def add_deal():
+    if request.method == 'POST':
+        deal = Deal(
+            user_id=current_user.id,
+            contact_id=request.form.get('contact_id') or None,
+            title=request.form.get('title'),
+            value=float(request.form.get('value', 0)),
+            stage=request.form.get('stage', 'lead'),
+            probability=int(request.form.get('probability', 0)),
+            description=request.form.get('description')
+        )
+
+        # Parse expected close date
+        close_date_str = request.form.get('expected_close_date')
+        if close_date_str:
+            deal.expected_close_date = datetime.strptime(close_date_str, '%Y-%m-%d').date()
+
+        db.session.add(deal)
+        db.session.commit()
+
+        flash('Deal added successfully!', 'success')
+        return redirect(url_for('pipeline'))
+
+    contacts = Contact.query.filter_by(user_id=current_user.id).all()
+    return render_template('deal_form.html', deal=None, contacts=contacts, user=current_user)
+
+@app.route('/deals/edit/<int:deal_id>', methods=['GET', 'POST'])
+@login_required
+def edit_deal(deal_id):
+    deal = Deal.query.filter_by(id=deal_id, user_id=current_user.id).first_or_404()
+
+    if request.method == 'POST':
+        deal.contact_id = request.form.get('contact_id') or None
+        deal.title = request.form.get('title')
+        deal.value = float(request.form.get('value', 0))
+        deal.stage = request.form.get('stage')
+        deal.probability = int(request.form.get('probability', 0))
+        deal.description = request.form.get('description')
+
+        close_date_str = request.form.get('expected_close_date')
+        if close_date_str:
+            deal.expected_close_date = datetime.strptime(close_date_str, '%Y-%m-%d').date()
+
+        db.session.commit()
+
+        flash('Deal updated successfully!', 'success')
+        return redirect(url_for('pipeline'))
+
+    contacts = Contact.query.filter_by(user_id=current_user.id).all()
+    return render_template('deal_form.html', deal=deal, contacts=contacts, user=current_user)
+
+@app.route('/deals/update-stage/<int:deal_id>', methods=['POST'])
+@login_required
+def update_deal_stage(deal_id):
+    deal = Deal.query.filter_by(id=deal_id, user_id=current_user.id).first_or_404()
+    new_stage = request.json.get('stage')
+
+    if new_stage in ['lead', 'qualified', 'proposal', 'negotiation', 'closed-won', 'closed-lost']:
+        deal.stage = new_stage
+        db.session.commit()
+        return jsonify({'success': True})
+
+    return jsonify({'success': False}), 400
+
+@app.route('/deals/delete/<int:deal_id>', methods=['POST'])
+@login_required
+def delete_deal(deal_id):
+    deal = Deal.query.filter_by(id=deal_id, user_id=current_user.id).first_or_404()
+    db.session.delete(deal)
+    db.session.commit()
+
+    flash('Deal deleted successfully!', 'success')
+    return redirect(url_for('pipeline'))
+
+# ========== ANALYTICS ROUTES ==========
+@app.route('/analytics')
+@login_required
+def analytics():
+    # Get various statistics
+    total_contacts = Contact.query.filter_by(user_id=current_user.id).count()
+    total_deals = Deal.query.filter_by(user_id=current_user.id).count()
+    won_deals = Deal.query.filter_by(user_id=current_user.id, stage='closed-won').count()
+    lost_deals = Deal.query.filter_by(user_id=current_user.id, stage='closed-lost').count()
+
+    total_revenue = db.session.query(db.func.sum(Deal.value)).filter_by(user_id=current_user.id, stage='closed-won').scalar() or 0
+    pipeline_value = db.session.query(db.func.sum(Deal.value)).filter_by(user_id=current_user.id).filter(Deal.stage.in_(['lead', 'qualified', 'proposal', 'negotiation'])).scalar() or 0
+
+    # Deals by stage
+    stages = ['lead', 'qualified', 'proposal', 'negotiation', 'closed-won', 'closed-lost']
+    deals_by_stage = {}
+    for stage in stages:
+        deals_by_stage[stage] = Deal.query.filter_by(user_id=current_user.id, stage=stage).count()
+
+    # Win rate
+    win_rate = (won_deals / total_deals * 100) if total_deals > 0 else 0
+
+    return render_template('analytics.html',
+                         user=current_user,
+                         total_contacts=total_contacts,
+                         total_deals=total_deals,
+                         won_deals=won_deals,
+                         lost_deals=lost_deals,
+                         total_revenue=total_revenue,
+                         pipeline_value=pipeline_value,
+                         deals_by_stage=deals_by_stage,
+                         win_rate=win_rate)
+
+# ========== TASKS ROUTES ==========
+@app.route('/tasks')
+@login_required
+def tasks():
+    pending_tasks = Task.query.filter_by(user_id=current_user.id, completed=False).order_by(Task.due_date).all()
+    completed_tasks = Task.query.filter_by(user_id=current_user.id, completed=True).order_by(Task.created_at.desc()).limit(20).all()
+
+    return render_template('tasks.html', pending_tasks=pending_tasks, completed_tasks=completed_tasks, user=current_user)
+
+@app.route('/tasks/add', methods=['POST'])
+@login_required
+def add_task():
+    task = Task(
+        user_id=current_user.id,
+        contact_id=request.form.get('contact_id') or None,
+        deal_id=request.form.get('deal_id') or None,
+        title=request.form.get('title'),
+        description=request.form.get('description'),
+        priority=request.form.get('priority', 'medium')
+    )
+
+    due_date_str = request.form.get('due_date')
+    if due_date_str:
+        task.due_date = datetime.strptime(due_date_str, '%Y-%m-%d')
+
+    db.session.add(task)
+    db.session.commit()
+
+    flash('Task created successfully!', 'success')
+    return redirect(url_for('tasks'))
+
+@app.route('/tasks/toggle/<int:task_id>', methods=['POST'])
+@login_required
+def toggle_task(task_id):
+    task = Task.query.filter_by(id=task_id, user_id=current_user.id).first_or_404()
+    task.completed = not task.completed
+    db.session.commit()
+
+    return jsonify({'success': True, 'completed': task.completed})
+
+# ========== NOTIFICATIONS ROUTES ==========
+@app.route('/notifications/settings', methods=['GET', 'POST'])
+@login_required
+def notification_settings():
+    settings = NotificationSettings.query.filter_by(user_id=current_user.id).first()
+
+    if not settings:
+        settings = NotificationSettings(user_id=current_user.id)
+        db.session.add(settings)
+        db.session.commit()
+
+    if request.method == 'POST':
+        settings.email_notifications = 'email_notifications' in request.form
+        settings.telegram_notifications = 'telegram_notifications' in request.form
+        settings.task_reminders = 'task_reminders' in request.form
+        settings.deal_updates = 'deal_updates' in request.form
+        settings.daily_summary = 'daily_summary' in request.form
+        db.session.commit()
+
+        flash('Notification settings updated!', 'success')
+        return redirect(url_for('notification_settings'))
+
+    return render_template('notification_settings.html', settings=settings, user=current_user)
+
+# ========== AUTOMATION ROUTES ==========
+@app.route('/automations')
+@login_required
+def automations():
+    automations = Automation.query.filter_by(user_id=current_user.id).all()
+    return render_template('automations.html', automations=automations, user=current_user)
+
+@app.route('/automations/add', methods=['GET', 'POST'])
+@login_required
+def add_automation():
+    if request.method == 'POST':
+        automation = Automation(
+            user_id=current_user.id,
+            name=request.form.get('name'),
+            trigger=request.form.get('trigger'),
+            action=request.form.get('action'),
+            active=True
+        )
+        db.session.add(automation)
+        db.session.commit()
+
+        flash('Automation created successfully!', 'success')
+        return redirect(url_for('automations'))
+
+    return render_template('automation_form.html', automation=None, user=current_user)
+
+@app.route('/automations/toggle/<int:automation_id>', methods=['POST'])
+@login_required
+def toggle_automation(automation_id):
+    automation = Automation.query.filter_by(id=automation_id, user_id=current_user.id).first_or_404()
+    automation.active = not automation.active
+    db.session.commit()
+
+    return jsonify({'success': True, 'active': automation.active})
+
+@app.route('/automations/delete/<int:automation_id>', methods=['POST'])
+@login_required
+def delete_automation(automation_id):
+    automation = Automation.query.filter_by(id=automation_id, user_id=current_user.id).first_or_404()
+    db.session.delete(automation)
+    db.session.commit()
+
+    flash('Automation deleted successfully!', 'success')
+    return redirect(url_for('automations'))
 
 # Initialize database
 with app.app_context():
