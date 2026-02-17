@@ -213,7 +213,7 @@ def index():
             flash('Invalid or expired token', 'error')
 
     if current_user.is_authenticated:
-        return render_template('dashboard.html', user=current_user)
+        return redirect(url_for('dashboard'))
 
     return redirect(url_for('login'))
 
@@ -324,7 +324,7 @@ def telegram_auth():
         print("✅ User logged in successfully")
         print("=" * 80)
 
-        return jsonify({'success': True, 'redirect': url_for('index')})
+        return jsonify({'success': True, 'redirect': url_for('dashboard')})
 
     except Exception as e:
         print("=" * 80)
@@ -675,10 +675,17 @@ def edit_contact(contact_id):
 @login_required
 def delete_contact(contact_id):
     contact = Contact.query.filter_by(id=contact_id, user_id=current_user.id).first_or_404()
-    db.session.delete(contact)
-    db.session.commit()
-
-    flash('Contact deleted successfully!', 'success')
+    try:
+        # Delete related records first
+        Activity.query.filter_by(contact_id=contact_id).delete()
+        Task.query.filter_by(contact_id=contact_id).delete()
+        Deal.query.filter_by(contact_id=contact_id).delete()
+        db.session.delete(contact)
+        db.session.commit()
+        flash('Contact deleted successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting contact: {str(e)}', 'error')
     return redirect(url_for('contacts'))
 
 @app.route('/contacts/<int:contact_id>')
