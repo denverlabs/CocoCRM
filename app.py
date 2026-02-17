@@ -7,6 +7,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import hashlib
 import hmac
 import os
+import requests as http_requests
+import json
+import threading
 from datetime import datetime, timedelta
 import jwt
 
@@ -196,6 +199,180 @@ def verify_temp_token(token):
         print(f"❌ Invalid token: {e}")
         return None
 
+# ========== TELEGRAM BOT API HELPERS ==========
+def send_telegram_message(chat_id, text, parse_mode='HTML'):
+    """Send a message to a Telegram user via Bot API"""
+    if not TELEGRAM_BOT_TOKEN:
+        print("WARNING: No TELEGRAM_BOT_TOKEN configured, cannot send message")
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {
+            'chat_id': chat_id,
+            'text': text,
+            'parse_mode': parse_mode
+        }
+        resp = http_requests.post(url, json=payload, timeout=10)
+        if resp.status_code == 200:
+            print(f"Telegram message sent to {chat_id}")
+            return True
+        else:
+            print(f"Failed to send Telegram message: {resp.status_code} {resp.text}")
+            return False
+    except Exception as e:
+        print(f"Error sending Telegram message: {e}")
+        return False
+
+
+def set_telegram_webhook():
+    """Set the Telegram webhook to our app's endpoint"""
+    if not TELEGRAM_BOT_TOKEN:
+        print("WARNING: No TELEGRAM_BOT_TOKEN, skipping webhook setup")
+        return
+    base_url = os.environ.get('BASE_URL', '').rstrip('/')
+    if not base_url:
+        print("WARNING: No BASE_URL configured, skipping webhook setup")
+        return
+    webhook_url = f"{base_url}/telegram/webhook"
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook"
+        resp = http_requests.post(url, json={'url': webhook_url}, timeout=10)
+        data = resp.json()
+        if data.get('ok'):
+            print(f"Telegram webhook set to: {webhook_url}")
+        else:
+            print(f"Failed to set webhook: {data}")
+    except Exception as e:
+        print(f"Error setting webhook: {e}")
+
+
+def handle_bot_command(message):
+    """Process a Telegram bot command from webhook"""
+    chat_id = message.get('chat', {}).get('id')
+    text = message.get('text', '').strip()
+    user_data = message.get('from', {})
+    telegram_id = str(user_data.get('id', ''))
+    first_name = user_data.get('first_name', '')
+    last_name = user_data.get('last_name', '')
+    username = user_data.get('username', '')
+
+    if not chat_id or not text:
+        return
+
+    # /start command
+    if text.startswith('/start'):
+        send_telegram_message(chat_id,
+            f"<b>Welcome to CocoCRM, {first_name}!</b>\n\n"
+            f"I'm Coco, your CRM assistant bot.\n\n"
+            f"<b>Commands:</b>\n"
+            f"/crm - Get a login link to access CocoCRM\n"
+            f"/login - Same as /crm\n"
+            f"/status - Check your account status\n"
+            f"/help - Show this help message\n\n"
+            f"<i>Click /crm to get your personal login link!</i>"
+        )
+        # Auto-create user in database if not exists
+        with app.app_context():
+            _ensure_telegram_user(telegram_id, username, first_name, last_name)
+        return
+
+    # /help command
+    if text.startswith('/help'):
+        send_telegram_message(chat_id,
+            "<b>CocoCRM Bot Help</b>\n\n"
+            "/crm - Generate a temporary login link (3 hours)\n"
+            "/login - Same as /crm\n"
+            "/status - Check your account status\n"
+            "/help - Show this help message\n\n"
+            "Your login link gives you full access to:\n"
+            "- Contact Management\n"
+            "- Sales Pipeline\n"
+            "- Tasks & Automation\n"
+            "- Analytics Dashboard"
+        )
+        return
+
+    # /crm or /login command - generate login link
+    if text.startswith('/crm') or text.startswith('/login'):
+        with app.app_context():
+            user = _ensure_telegram_user(telegram_id, username, first_name, last_name)
+            if user:
+                token = generate_temp_token(user.id, user.username, expires_in_minutes=180)
+                base_url = os.environ.get('BASE_URL', 'https://cococrm.onrender.com')
+                login_url = f"{base_url}/?token={token}"
+                send_telegram_message(chat_id,
+                    f"<b>Your CocoCRM Login Link</b>\n\n"
+                    f"<a href=\"{login_url}\">Click here to open CocoCRM</a>\n\n"
+                    f"Valid for: 3 hours\n"
+                    f"User: {user.username}\n\n"
+                    f"<i>This link is personal - don't share it!</i>"
+                )
+            else:
+                send_telegram_message(chat_id,
+                    "Error creating your account. Please try again later."
+                )
+        return
+
+    # /status command
+    if text.startswith('/status'):
+        with app.app_context():
+            user = User.query.filter_by(telegram_id=telegram_id).first()
+            if user:
+                task_count = Task.query.filter_by(user_id=user.id, completed=False).count()
+                deal_count = Deal.query.filter_by(user_id=user.id).filter(
+                    Deal.stage.in_(['lead', 'qualified', 'proposal', 'negotiation'])
+                ).count()
+                contact_count = Contact.query.filter_by(user_id=user.id).count()
+                send_telegram_message(chat_id,
+                    f"<b>Your CocoCRM Status</b>\n\n"
+                    f"User: {user.username}\n"
+                    f"Contacts: {contact_count}\n"
+                    f"Active Deals: {deal_count}\n"
+                    f"Pending Tasks: {task_count}\n\n"
+                    f"Use /crm to get your login link!"
+                )
+            else:
+                send_telegram_message(chat_id,
+                    "You don't have an account yet.\n"
+                    "Send /crm to create one and get your login link!"
+                )
+        return
+
+    # Default response for unknown commands
+    if text.startswith('/'):
+        send_telegram_message(chat_id,
+            f"Unknown command: {text}\n\nSend /help to see available commands."
+        )
+    else:
+        send_telegram_message(chat_id,
+            f"Hi {first_name}! Send /crm to get your CocoCRM login link."
+        )
+
+
+def _ensure_telegram_user(telegram_id, username, first_name, last_name):
+    """Find or create a user from Telegram data"""
+    if not telegram_id:
+        return None
+    user = User.query.filter_by(telegram_id=str(telegram_id)).first()
+    if not user:
+        uname = username or f"user_{telegram_id}"
+        # Check if username exists, add suffix if needed
+        existing = User.query.filter_by(username=uname).first()
+        if existing:
+            uname = f"{uname}_{telegram_id}"
+        user = User(
+            username=uname,
+            telegram_id=str(telegram_id),
+            telegram_username=username,
+            first_name=first_name,
+            last_name=last_name
+        )
+        db.session.add(user)
+        db.session.commit()
+        print(f"Created new user from Telegram: {uname} (ID: {telegram_id})")
+    return user
+
+
 def run_automations(trigger, user_id, contact_id=None, deal_id=None, extra_data=None):
     """Execute active automations matching the given trigger"""
     try:
@@ -370,6 +547,20 @@ def telegram_auth():
         print("✅ User logged in successfully")
         print("=" * 80)
 
+        # Send welcome message via Telegram bot
+        if telegram_id:
+            thread = threading.Thread(target=send_telegram_message, args=(
+                telegram_id,
+                f"<b>Welcome to CocoCRM!</b>\n\n"
+                f"You've been logged in successfully.\n\n"
+                f"<b>Quick commands:</b>\n"
+                f"/crm - Get a new login link anytime\n"
+                f"/status - Check your CRM stats\n\n"
+                f"<i>Enjoy managing your business!</i>"
+            ))
+            thread.daemon = True
+            thread.start()
+
         return jsonify({'success': True, 'redirect': url_for('dashboard')})
 
     except Exception as e:
@@ -380,6 +571,58 @@ def telegram_auth():
         print(traceback.format_exc())
         print("=" * 80)
         return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
+
+@app.route('/telegram/setup-webhook')
+def setup_webhook_endpoint():
+    """Manually trigger webhook setup - visit this URL once after deployment"""
+    if not TELEGRAM_BOT_TOKEN:
+        return jsonify({'error': 'TELEGRAM_BOT_TOKEN not configured'}), 400
+    base_url = os.environ.get('BASE_URL', '').rstrip('/')
+    if not base_url:
+        return jsonify({'error': 'BASE_URL not configured'}), 400
+    webhook_url = f"{base_url}/telegram/webhook"
+    try:
+        # Set webhook
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook"
+        resp = http_requests.post(url, json={'url': webhook_url}, timeout=10)
+        result = resp.json()
+
+        # Get webhook info
+        info_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+        info_resp = http_requests.get(info_url, timeout=10)
+        info = info_resp.json()
+
+        return jsonify({
+            'webhook_set': result,
+            'webhook_info': info,
+            'webhook_url': webhook_url,
+            'bot_username': TELEGRAM_BOT_USERNAME
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/telegram/webhook', methods=['POST'])
+def telegram_webhook():
+    """Receive Telegram bot updates via webhook"""
+    try:
+        update = request.json
+        if not update:
+            return jsonify({'ok': True})
+
+        # Handle messages with commands
+        message = update.get('message')
+        if message:
+            # Process in background thread so we don't block the webhook response
+            thread = threading.Thread(target=handle_bot_command, args=(message,))
+            thread.daemon = True
+            thread.start()
+
+        return jsonify({'ok': True})
+    except Exception as e:
+        print(f"Error in webhook: {e}")
+        return jsonify({'ok': True})  # Always return 200 to Telegram
+
 
 @app.route('/api/telegram/generate-token', methods=['POST'])
 def generate_token_endpoint():
@@ -415,21 +658,25 @@ def generate_token_endpoint():
         # Check for API key authentication (recommended for bot access)
         expected_api_key = os.environ.get('TELEGRAM_API_KEY', 'dev-api-key-change-me')
         if api_key and api_key == expected_api_key:
-            # API key is valid, find or create a service user
-            user = User.query.filter_by(username='kimi_ai_agent').first()
-
+            # API key is valid, find or create user
+            user = None
+            if telegram_id:
+                user = User.query.filter_by(telegram_id=str(telegram_id)).first()
+            if not user and username:
+                user = User.query.filter_by(username=username).first()
             if not user:
-                # Create service user for Kimi
+                # Create service user
+                uname = username or f"agent_{telegram_id or 'unknown'}"
                 user = User(
-                    username='kimi_ai_agent',
-                    first_name='Kimi',
-                    last_name='AI Agent',
+                    username=uname,
+                    first_name=data.get('first_name', uname),
+                    last_name=data.get('last_name', 'Agent'),
                     telegram_id=telegram_id if telegram_id else None,
                     telegram_username=username if username else None
                 )
                 db.session.add(user)
                 db.session.commit()
-                print(f"✅ Created service user: kimi_ai_agent")
+                print(f"Created service user: {uname}")
 
         elif telegram_id:
             # Find user by telegram_id
@@ -1286,6 +1533,18 @@ def init_database_route():
 # Initialize database
 with app.app_context():
     db.create_all()
+
+# Set up Telegram webhook on startup (in background to not block startup)
+def _setup_webhook():
+    """Set up Telegram webhook after a short delay to ensure app is ready"""
+    import time
+    time.sleep(5)  # Wait for app to be fully started
+    with app.app_context():
+        set_telegram_webhook()
+
+_webhook_thread = threading.Thread(target=_setup_webhook)
+_webhook_thread.daemon = True
+_webhook_thread.start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

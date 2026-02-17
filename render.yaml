@@ -3,7 +3,7 @@ services:
     name: cococrm
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: bash start.sh
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -13,3 +13,7 @@ services:
         sync: false
       - key: TELEGRAM_BOT_USERNAME
         value: Cangrekimibot
+      - key: TELEGRAM_API_KEY
+        sync: false
+      - key: BASE_URL
+        value: https://cococrm.onrender.com
