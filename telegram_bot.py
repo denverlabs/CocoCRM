@@ -38,7 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"👋 Hello {user.mention_html()}!\n\n"
         f"I'm the CocoCRM bot. I can help you access the CRM system.\n\n"
         f"Available commands:\n"
-        f"/login - Get a temporary login link (180 minutes)\n"
+        f"/crm - Get a temporary login link (180 minutes)\n"
         f"/help - Show this help message"
     )
 
@@ -48,7 +48,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(
         "🤖 CocoCRM Bot Help\n\n"
         "Commands:\n"
-        "/login - Generate a temporary login link to access the CRM\n"
+        "/crm - Generate a temporary login link to access the CRM\n"
         "/help - Show this help message\n\n"
         "The login link is valid for 180 minutes (3 hours)."
     )
@@ -151,7 +151,7 @@ def main() -> None:
     # Register command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("login", login_command))
+    application.add_handler(CommandHandler("crm", login_command))
 
     # Start the Bot
     logger.info("✅ Bot is running! Press Ctrl+C to stop.")

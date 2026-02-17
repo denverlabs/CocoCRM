@@ -10,7 +10,7 @@ Este documento explica cómo Kimi Claw puede acceder al CocoCRM vía Telegram.
 
 1. **Enviar comando por Telegram**:
    ```
-   /login
+   /crm
    ```
 
 2. **Recibir link temporal**:
@@ -36,7 +36,7 @@ Este documento explica cómo Kimi Claw puede acceder al CocoCRM vía Telegram.
 
 ### 1. Telegram Bot (`@Cangrekimibot`)
 
-**Comando disponible**: `/login`
+**Comando disponible**: `/crm`
 
 **Comportamiento**:
 - Genera un JWT temporal (180 min)
@@ -141,7 +141,7 @@ SECRET_KEY=coco-crm-production-secret-key-2026-render-deployment
 
 1. Abrir Telegram
 2. Buscar `@Cangrekimibot`
-3. Enviar `/login`
+3. Enviar `/crm`
 4. Click en el link recibido
 5. Verificar acceso al dashboard
 
@@ -198,7 +198,7 @@ gunicorn app:app --bind 0.0.0.0:$PORT
 ### Token inválido o expirado
 
 - Los tokens expiran después de 180 minutos
-- Solicitar un nuevo token con `/login`
+- Solicitar un nuevo token con `/crm`
 
 ### Error 404 al acceder con token
 
