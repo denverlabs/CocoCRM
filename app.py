@@ -624,6 +624,217 @@ def telegram_webhook():
         return jsonify({'ok': True})  # Always return 200 to Telegram
 
 
+# ========== REST API FOR OPENCLAW INTEGRATION ==========
+# API Key Configuration - supports OPENCLAW_API_KEY or fallback to TELEGRAM_API_KEY
+OPENCLAW_API_KEY = os.environ.get('OPENCLAW_API_KEY') or os.environ.get('TELEGRAM_API_KEY', 'dev-api-key-change-me')
+
+def require_api_key(f):
+    """Decorator to require API key for REST API endpoints
+
+    Supports multiple authentication methods:
+    1. X-API-Key header (recommended)
+    2. Authorization: Bearer <api_key> header
+    3. api_key query parameter (less secure, use for testing only)
+    """
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        api_key = None
+
+        # Method 1: X-API-Key header (recommended)
+        api_key = request.headers.get('X-API-Key')
+
+        # Method 2: Authorization Bearer header
+        if not api_key:
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                api_key = auth_header.replace('Bearer ', '').strip()
+
+        # Method 3: Query parameter (least secure)
+        if not api_key:
+            api_key = request.args.get('api_key')
+
+        # Verify API key
+        if not api_key or api_key != OPENCLAW_API_KEY:
+            return jsonify({
+                'error': 'Invalid or missing API key',
+                'hint': 'Use X-API-Key header, Authorization: Bearer header, or api_key query param',
+                'docs': 'See OPENCLAW_API.md for authentication details'
+            }), 401
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/api/contacts', methods=['GET'])
+@require_api_key
+def api_list_contacts():
+    """List all contacts - for OpenClaw integration"""
+    username = request.args.get('username', 'admin')
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    contacts = Contact.query.filter_by(user_id=user.id).all()
+    return jsonify({
+        'success': True,
+        'contacts': [{
+            'id': c.id,
+            'name': c.name,
+            'email': c.email,
+            'phone': c.phone,
+            'company': c.company,
+            'position': c.position,
+            'tags': c.tags,
+            'created_at': c.created_at.isoformat() if c.created_at else None
+        } for c in contacts]
+    })
+
+@app.route('/api/contacts', methods=['POST'])
+@require_api_key
+def api_create_contact():
+    """Create a new contact - for OpenClaw integration"""
+    data = request.json
+    username = data.get('username', 'admin')
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    contact = Contact(
+        user_id=user.id,
+        name=data.get('name'),
+        email=data.get('email'),
+        phone=data.get('phone'),
+        company=data.get('company'),
+        position=data.get('position'),
+        tags=data.get('tags'),
+        notes=data.get('notes')
+    )
+    db.session.add(contact)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'contact': {
+            'id': contact.id,
+            'name': contact.name,
+            'email': contact.email,
+            'phone': contact.phone
+        }
+    }), 201
+
+@app.route('/api/deals', methods=['GET'])
+@require_api_key
+def api_list_deals():
+    """List all deals - for OpenClaw integration"""
+    username = request.args.get('username', 'admin')
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    deals = Deal.query.filter_by(user_id=user.id).all()
+    return jsonify({
+        'success': True,
+        'deals': [{
+            'id': d.id,
+            'title': d.title,
+            'value': d.value,
+            'stage': d.stage,
+            'probability': d.probability,
+            'contact_id': d.contact_id,
+            'created_at': d.created_at.isoformat() if d.created_at else None
+        } for d in deals]
+    })
+
+@app.route('/api/deals', methods=['POST'])
+@require_api_key
+def api_create_deal():
+    """Create a new deal - for OpenClaw integration"""
+    data = request.json
+    username = data.get('username', 'admin')
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    deal = Deal(
+        user_id=user.id,
+        contact_id=data.get('contact_id'),
+        title=data.get('title'),
+        value=float(data.get('value', 0)),
+        stage=data.get('stage', 'lead'),
+        probability=int(data.get('probability', 0)),
+        description=data.get('description')
+    )
+    db.session.add(deal)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'deal': {
+            'id': deal.id,
+            'title': deal.title,
+            'value': deal.value,
+            'stage': deal.stage
+        }
+    }), 201
+
+@app.route('/api/tasks', methods=['GET'])
+@require_api_key
+def api_list_tasks():
+    """List all tasks - for OpenClaw integration"""
+    username = request.args.get('username', 'admin')
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    tasks = Task.query.filter_by(user_id=user.id).all()
+    return jsonify({
+        'success': True,
+        'tasks': [{
+            'id': t.id,
+            'title': t.title,
+            'description': t.description,
+            'priority': t.priority,
+            'completed': t.completed,
+            'due_date': t.due_date.isoformat() if t.due_date else None,
+            'created_at': t.created_at.isoformat() if t.created_at else None
+        } for t in tasks]
+    })
+
+@app.route('/api/tasks', methods=['POST'])
+@require_api_key
+def api_create_task():
+    """Create a new task - for OpenClaw integration"""
+    data = request.json
+    username = data.get('username', 'admin')
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    task = Task(
+        user_id=user.id,
+        contact_id=data.get('contact_id'),
+        deal_id=data.get('deal_id'),
+        title=data.get('title'),
+        description=data.get('description'),
+        priority=data.get('priority', 'medium')
+    )
+
+    if data.get('due_date'):
+        task.due_date = datetime.fromisoformat(data['due_date'])
+
+    db.session.add(task)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'task': {
+            'id': task.id,
+            'title': task.title,
+            'priority': task.priority,
+            'completed': task.completed
+        }
+    }), 201
+
 @app.route('/api/telegram/generate-token', methods=['POST'])
 def generate_token_endpoint():
     """
@@ -1312,6 +1523,39 @@ def toggle_task(task_id):
 
     return jsonify({'success': True, 'completed': task.completed})
 
+@app.route('/tasks/edit/<int:task_id>', methods=['POST'])
+@login_required
+def edit_task(task_id):
+    task = Task.query.filter_by(id=task_id, user_id=current_user.id).first_or_404()
+
+    task.title = request.form.get('title')
+    task.description = request.form.get('description')
+    task.priority = request.form.get('priority', 'medium')
+
+    due_date_str = request.form.get('due_date')
+    if due_date_str:
+        task.due_date = datetime.strptime(due_date_str, '%Y-%m-%d')
+    else:
+        task.due_date = None
+
+    db.session.commit()
+    log_activity('note', f'Task updated: {task.title}', contact_id=task.contact_id, deal_id=task.deal_id)
+
+    flash('Task updated successfully!', 'success')
+    return redirect(url_for('tasks'))
+
+@app.route('/tasks/delete/<int:task_id>', methods=['POST'])
+@login_required
+def delete_task(task_id):
+    task = Task.query.filter_by(id=task_id, user_id=current_user.id).first_or_404()
+    task_title = task.title
+    db.session.delete(task)
+    db.session.commit()
+
+    log_activity('note', f'Task deleted: {task_title}')
+    flash('Task deleted successfully!', 'success')
+    return redirect(url_for('tasks'))
+
 # ========== NOTIFICATIONS ROUTES ==========
 @app.route('/notifications/settings', methods=['GET', 'POST'])
 @login_required
@@ -1380,6 +1624,107 @@ def delete_automation(automation_id):
 
     flash('Automation deleted successfully!', 'success')
     return redirect(url_for('automations'))
+
+# ========== ADMIN ROUTES ==========
+@app.route('/admin/reset-password', methods=['GET', 'POST'])
+def reset_admin_password():
+    """Reset admin password - protected by secret key"""
+    if request.method == 'GET':
+        # Show form
+        html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Reset Admin Password</title>
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px;
+                }
+                .card {
+                    background: white;
+                    border-radius: 15px;
+                    padding: 40px;
+                    max-width: 400px;
+                    width: 100%;
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                }
+                h1 { color: #667eea; margin-bottom: 20px; }
+                input {
+                    width: 100%;
+                    padding: 12px;
+                    margin: 10px 0;
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    font-size: 14px;
+                }
+                button {
+                    width: 100%;
+                    padding: 12px;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    margin-top: 20px;
+                }
+                button:hover { opacity: 0.9; }
+                .note { font-size: 12px; color: #666; margin-top: 15px; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>🔐 Reset Admin Password</h1>
+                <form method="POST">
+                    <input type="text" name="username" placeholder="Username (admin)" required>
+                    <input type="password" name="new_password" placeholder="New Password" required>
+                    <input type="password" name="confirm_password" placeholder="Confirm Password" required>
+                    <input type="password" name="admin_key" placeholder="Admin Key (from SECRET_KEY)" required>
+                    <button type="submit">Reset Password</button>
+                </form>
+                <div class="note">Admin key is the first 16 characters of your SECRET_KEY environment variable.</div>
+            </div>
+        </body>
+        </html>
+        """
+        return html
+
+    # Handle POST
+    username = request.form.get('username')
+    new_password = request.form.get('new_password')
+    confirm_password = request.form.get('confirm_password')
+    admin_key = request.form.get('admin_key')
+
+    # Verify admin key (first 16 chars of SECRET_KEY)
+    expected_key = app.config['SECRET_KEY'][:16]
+    if admin_key != expected_key:
+        flash('Invalid admin key', 'error')
+        return redirect(url_for('reset_admin_password'))
+
+    if new_password != confirm_password:
+        flash('Passwords do not match', 'error')
+        return redirect(url_for('reset_admin_password'))
+
+    if len(new_password) < 6:
+        flash('Password must be at least 6 characters', 'error')
+        return redirect(url_for('reset_admin_password'))
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        flash('User not found', 'error')
+        return redirect(url_for('reset_admin_password'))
+
+    user.set_password(new_password)
+    db.session.commit()
+
+    flash(f'Password reset successfully for {username}!', 'success')
+    return redirect(url_for('login'))
 
 # ========== DATABASE INITIALIZATION ROUTE ==========
 @app.route('/init-db')
