@@ -168,28 +168,43 @@ def verify_telegram_auth(auth_data):
 
     return calculated_hash == check_hash
 
-def generate_temp_token(user_id, username, expires_in_minutes=180):
-    """Generate a temporary JWT token for auto-login"""
-    expiration = datetime.utcnow() + timedelta(minutes=expires_in_minutes)
+def generate_temp_token(user_id, username, expires_in_minutes=180, **extra_data):
+    """Generate a temporary JWT token for auto-login with optional extra user data"""
+    now = datetime.utcnow()
+    expiration = now + timedelta(minutes=expires_in_minutes)
 
     payload = {
         'user_id': user_id,
         'username': username,
         'exp': expiration,
-        'iat': datetime.utcnow(),
+        'iat': now,
         'type': 'temp_login'
     }
 
+    # Add extra user data for user recreation if needed
+    if extra_data:
+        payload.update(extra_data)
+
     token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+
+    # Log token generation for debugging
+    print(f"🔑 Token generated: user={username}, id={user_id}, expires={expiration.isoformat()}Z")
+
     return token
 
 def verify_temp_token(token):
-    """Verify and decode a temporary JWT token"""
+    """Verify and decode a temporary JWT token with detailed logging"""
     try:
         payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
 
         if payload.get('type') != 'temp_login':
+            print(f"⚠️ Token has wrong type: {payload.get('type')}")
             return None
+
+        # Log successful verification
+        exp_time = datetime.fromtimestamp(payload.get('exp', 0))
+        now = datetime.utcnow()
+        print(f"✅ Token verified: user={payload.get('username')}, expires={exp_time.isoformat()}Z, now={now.isoformat()}Z")
 
         return payload
     except jwt.ExpiredSignatureError:
@@ -197,6 +212,11 @@ def verify_temp_token(token):
         return None
     except jwt.InvalidTokenError as e:
         print(f"❌ Invalid token: {e}")
+        return None
+    except Exception as e:
+        print(f"💥 Token verification error: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return None
 
 # ========== TELEGRAM BOT API HELPERS ==========
@@ -425,13 +445,35 @@ def index():
     if token and not current_user.is_authenticated:
         payload = verify_temp_token(token)
         if payload:
-            user = User.query.get(payload['user_id'])
+            user_id = payload.get('user_id')
+            username = payload.get('username')
+
+            # Try to find user by ID first
+            user = User.query.get(user_id) if user_id else None
+
+            # If user not found by ID, try by username
+            if not user and username:
+                user = User.query.filter_by(username=username).first()
+
+            # If still not found, create the user (token is valid but user missing)
+            if not user and username:
+                print(f"⚠️ User {username} (ID: {user_id}) not found, recreating from token...")
+                user = User(
+                    username=username,
+                    first_name=payload.get('first_name', username),
+                    last_name=payload.get('last_name', 'User'),
+                    telegram_id=payload.get('telegram_id')
+                )
+                db.session.add(user)
+                db.session.commit()
+                print(f"✅ Recreated user: {username}")
+
             if user:
                 login_user(user)
                 flash('Auto-login successful! Welcome back.', 'success')
                 return redirect(url_for('index'))  # Redirect to clean URL
             else:
-                flash('Invalid token: user not found', 'error')
+                flash('Invalid token: could not authenticate', 'error')
         else:
             flash('Invalid or expired token', 'error')
 
@@ -904,14 +946,21 @@ def generate_token_endpoint():
         else:
             return jsonify({'success': False, 'message': 'Must provide telegram_id, username, or api_key'}), 400
 
-        # Generate temporary token
-        token = generate_temp_token(user.id, user.username, expires_in_minutes=180)
+        # Generate temporary token with extra user data for recovery
+        token = generate_temp_token(
+            user.id,
+            user.username,
+            expires_in_minutes=180,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            telegram_id=user.telegram_id
+        )
 
         # Get base URL (support both local and production)
         base_url = os.environ.get('BASE_URL', 'https://cococrm.onrender.com')
         login_url = f"{base_url}/?token={token}"
 
-        print(f"✅ Generated token for user: {user.username}")
+        print(f"✅ Generated token for user: {user.username} (ID: {user.id})")
         print(f"🔗 Login URL: {login_url}")
 
         return jsonify({
