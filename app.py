@@ -927,6 +927,155 @@ def delete_automation(automation_id):
     flash('Automation deleted successfully!', 'success')
     return redirect(url_for('automations'))
 
+# ========== DATABASE INITIALIZATION ROUTE ==========
+@app.route('/init-db')
+def init_database_route():
+    """
+    Initialize database and create default users
+    Access this once after deployment: https://your-app.onrender.com/init-db?key=init-coco-2024
+    """
+    # Simple protection - require a key parameter
+    init_key = request.args.get('key')
+    if init_key != 'init-coco-2024':
+        return jsonify({'error': 'Invalid initialization key'}), 403
+
+    try:
+        # Create all tables
+        db.create_all()
+
+        results = {
+            'database_created': True,
+            'users_created': [],
+            'users_updated': [],
+            'errors': []
+        }
+
+        # Create admin user
+        admin = User.query.filter_by(username='admin').first()
+        if not admin:
+            admin = User(
+                username='admin',
+                email='admin@cococrm.com',
+                first_name='Admin',
+                last_name='CocoCRM'
+            )
+            admin.set_password('admin123')
+            db.session.add(admin)
+            results['users_created'].append('admin')
+        else:
+            results['users_updated'].append('admin (already exists)')
+
+        # Create Coco user (openclaw)
+        coco = User.query.filter_by(username='coco').first()
+        if not coco:
+            coco = User(
+                username='coco',
+                email='coco@openclaw.ai',
+                first_name='Coco',
+                last_name='OpenClaw'
+            )
+            coco.set_password('coco123')
+            db.session.add(coco)
+            results['users_created'].append('coco')
+        else:
+            results['users_updated'].append('coco (already exists)')
+
+        # Commit changes
+        db.session.commit()
+
+        # Get all users
+        all_users = User.query.all()
+        results['total_users'] = len(all_users)
+        results['users_list'] = [{'username': u.username, 'email': u.email} for u in all_users]
+
+        # Return success message
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Database Initialized - CocoCRM</title>
+            <style>
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 50px;
+                    max-width: 800px;
+                    margin: 0 auto;
+                }}
+                .card {{
+                    background: rgba(255, 255, 255, 0.1);
+                    backdrop-filter: blur(10px);
+                    border-radius: 15px;
+                    padding: 40px;
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                }}
+                h1 {{ font-size: 2.5em; margin-bottom: 20px; }}
+                .success {{ color: #4CAF50; font-size: 1.2em; margin: 20px 0; }}
+                .info {{ background: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 10px; margin: 20px 0; }}
+                .user-list {{ list-style: none; padding: 0; }}
+                .user-list li {{ padding: 10px; background: rgba(255, 255, 255, 0.05); margin: 5px 0; border-radius: 5px; }}
+                .btn {{
+                    display: inline-block;
+                    padding: 15px 30px;
+                    background: white;
+                    color: #667eea;
+                    text-decoration: none;
+                    border-radius: 10px;
+                    font-weight: bold;
+                    margin-top: 20px;
+                }}
+                .credentials {{
+                    background: rgba(0, 0, 0, 0.2);
+                    padding: 20px;
+                    border-radius: 10px;
+                    margin: 20px 0;
+                    border-left: 4px solid #4CAF50;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>✅ Database Initialized Successfully!</h1>
+
+                <div class="success">
+                    Database tables created and users configured
+                </div>
+
+                <div class="credentials">
+                    <h3>🔑 Login Credentials:</h3>
+                    <ul>
+                        <li><strong>Admin:</strong> username: <code>admin</code> / password: <code>admin123</code></li>
+                        <li><strong>Coco (OpenClaw):</strong> username: <code>coco</code> / password: <code>coco123</code></li>
+                    </ul>
+                </div>
+
+                <div class="info">
+                    <h3>📊 Summary:</h3>
+                    <p><strong>Total users in database:</strong> {results['total_users']}</p>
+                    <p><strong>Users created this run:</strong> {', '.join(results['users_created']) if results['users_created'] else 'None (already existed)'}</p>
+
+                    <h4>All users:</h4>
+                    <ul class="user-list">
+                        {''.join([f"<li>{u['username']} ({u['email'] or 'no email'})</li>" for u in results['users_list']])}
+                    </ul>
+                </div>
+
+                <a href="/login" class="btn">Go to Login →</a>
+            </div>
+        </body>
+        </html>
+        """
+        return html
+
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        return jsonify({
+            'error': str(e),
+            'trace': error_trace
+        }), 500
+
 # Initialize database
 with app.app_context():
     db.create_all()
