@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ 'Edit' if deal else 'Add' }} Deal - CocoCRM</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: white;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            padding: 0 40px;
+            height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .form-card {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .form-header {
+            margin-bottom: 30px;
+        }
+
+        .form-header h1 {
+            font-size: 28px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .form-header p {
+            color: #999;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            flex: 1;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #666;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .form-card {
+                padding: 30px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="{{ url_for('index') }}" class="logo">📇 CocoCRM</a>
+    </div>
+
+    <div class="container">
+        <div class="form-card">
+            <div class="form-header">
+                <h1>{{ '✏️ Edit Deal' if deal else '💰 Add New Deal' }}</h1>
+                <p>{{ 'Update deal information' if deal else 'Create a new sales opportunity' }}</p>
+            </div>
+
+            <form method="POST">
+                <div class="form-group">
+                    <label for="title">Deal Title *</label>
+                    <input type="text" id="title" name="title" value="{{ deal.title if deal else '' }}" required placeholder="e.g., Q1 2024 Contract">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="value">Deal Value ($) *</label>
+                        <input type="number" step="0.01" id="value" name="value" value="{{ deal.value if deal else '' }}" required placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label for="probability">Probability (%)</label>
+                        <input type="number" min="0" max="100" id="probability" name="probability" value="{{ deal.probability if deal else 50 }}" placeholder="50">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="stage">Stage *</label>
+                        <select id="stage" name="stage" required>
+                            <option value="lead" {% if deal and deal.stage == 'lead' %}selected{% endif %}>Lead</option>
+                            <option value="qualified" {% if deal and deal.stage == 'qualified' %}selected{% endif %}>Qualified</option>
+                            <option value="proposal" {% if deal and deal.stage == 'proposal' %}selected{% endif %}>Proposal</option>
+                            <option value="negotiation" {% if deal and deal.stage == 'negotiation' %}selected{% endif %}>Negotiation</option>
+                            <option value="closed-won" {% if deal and deal.stage == 'closed-won' %}selected{% endif %}>Closed Won</option>
+                            <option value="closed-lost" {% if deal and deal.stage == 'closed-lost' %}selected{% endif %}>Closed Lost</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="expected_close_date">Expected Close Date</label>
+                        <input type="date" id="expected_close_date" name="expected_close_date" value="{{ deal.expected_close_date if deal else '' }}">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="contact_id">Associated Contact</label>
+                    <select id="contact_id" name="contact_id">
+                        <option value="">None</option>
+                        {% for contact in contacts %}
+                        <option value="{{ contact.id }}" {% if deal and deal.contact_id == contact.id %}selected{% endif %}>
+                            {{ contact.name }}{% if contact.company %} - {{ contact.company }}{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <textarea id="description" name="description" placeholder="Add details about this deal">{{ deal.description if deal else '' }}</textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">{{ 'Update Deal' if deal else 'Create Deal' }}</button>
+                    <a href="{{ url_for('pipeline') }}" class="btn btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

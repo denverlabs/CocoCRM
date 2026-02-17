@@ -226,6 +226,8 @@
             font-size: 14px;
             font-weight: 600;
             transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
         }
 
         .btn-feature:hover {
@@ -291,6 +293,7 @@
                     </div>
                 </div>
             </div>
+            <a href="{{ url_for('change_password') }}" class="btn-logout">Change Password</a>
             <a href="{{ url_for('logout') }}" class="btn-logout">Logout</a>
         </div>
     </div>
@@ -310,22 +313,22 @@
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-icon purple">📇</div>
-                <div class="stat-value">0</div>
+                <div class="stat-value">{{ total_contacts }}</div>
                 <div class="stat-label">Total Contacts</div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon blue">📊</div>
-                <div class="stat-value">0</div>
+                <div class="stat-value">{{ active_deals }}</div>
                 <div class="stat-label">Active Deals</div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon green">✅</div>
-                <div class="stat-value">0</div>
+                <div class="stat-value">{{ completed_tasks }}</div>
                 <div class="stat-label">Tasks Completed</div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon orange">💰</div>
-                <div class="stat-value">$0</div>
+                <div class="stat-value">${{ '{:,.2f}'.format(total_revenue|default(0)) }}</div>
                 <div class="stat-label">Total Revenue</div>
             </div>
         </div>
@@ -335,37 +338,37 @@
                 <div class="feature-icon">📇</div>
                 <h3>Contact Management</h3>
                 <p>Organize and manage all your contacts in one place. Track interactions, add notes, and build stronger relationships.</p>
-                <button class="btn-feature">Add Contact</button>
+                <a href="{{ url_for('contacts') }}" class="btn-feature">View Contacts</a>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">📊</div>
                 <h3>Sales Pipeline</h3>
                 <p>Visualize your sales process and track deals from lead to close. Never miss an opportunity again.</p>
-                <button class="btn-feature">View Pipeline</button>
+                <a href="{{ url_for('pipeline') }}" class="btn-feature">View Pipeline</a>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">📈</div>
                 <h3>Analytics & Reports</h3>
                 <p>Get insights into your business with powerful analytics and customizable reports.</p>
-                <button class="btn-feature">View Reports</button>
+                <a href="{{ url_for('analytics') }}" class="btn-feature">View Analytics</a>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">💬</div>
-                <h3>Telegram Integration</h3>
-                <p>Receive instant notifications and manage your CRM directly from Telegram.</p>
-                <button class="btn-feature">Configure</button>
+                <div class="feature-icon">✅</div>
+                <h3>Task Management</h3>
+                <p>Keep track of your to-dos, set deadlines, and never miss an important follow-up.</p>
+                <a href="{{ url_for('tasks') }}" class="btn-feature">View Tasks</a>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">⚡</div>
                 <h3>Automation</h3>
                 <p>Automate repetitive tasks and workflows to save time and increase productivity.</p>
-                <button class="btn-feature">Setup Automation</button>
+                <a href="{{ url_for('automations') }}" class="btn-feature">Setup Automation</a>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">🔔</div>
                 <h3>Notifications</h3>
                 <p>Stay updated with real-time notifications for important events and activities.</p>
-                <button class="btn-feature">Manage Settings</button>
+                <a href="{{ url_for('notification_settings') }}" class="btn-feature">Manage Settings</a>
             </div>
         </div>
     </div>

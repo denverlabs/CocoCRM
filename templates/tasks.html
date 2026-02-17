@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tasks - CocoCRM</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+        .header {
+            background: white;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            padding: 0 40px;
+            height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: #667eea;
+            text-decoration: none;
+        }
+        .nav { display: flex; gap: 30px; }
+        .nav a {
+            color: #666;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        .nav a:hover, .nav a.active { color: #667eea; }
+        .btn-logout {
+            padding: 10px 20px;
+            background: #f5f5f5;
+            color: #666;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+        }
+        .container { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+        .page-title { font-size: 32px; font-weight: 700; color: #333; margin-bottom: 30px; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .btn-primary {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+        .modal.active { display: flex; align-items: center; justify-content: center; }
+        .modal-content { background: white; border-radius: 15px; padding: 30px; width: 90%; max-width: 500px; }
+        .modal-title { font-size: 24px; font-weight: 700; margin-bottom: 20px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: 500; }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .form-group textarea { min-height: 80px; resize: vertical; }
+        .form-actions { display: flex; gap: 10px; justify-content: flex-end; }
+        .btn-secondary { padding: 12px 24px; background: #f0f0f0; color: #666; border: none; border-radius: 8px; cursor: pointer; }
+        .section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+        .section-title { font-size: 20px; font-weight: 600; color: #333; margin-bottom: 20px; }
+        .task-list { list-style: none; }
+        .task-item {
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 10px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .task-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .task-content { flex: 1; }
+        .task-title { font-weight: 600; color: #333; margin-bottom: 5px; }
+        .task-meta { color: #999; font-size: 13px; }
+        .priority-high { border-left: 4px solid #f44336; }
+        .priority-medium { border-left: 4px solid #ff9800; }
+        .priority-low { border-left: 4px solid #4caf50; }
+        .completed .task-title { text-decoration: line-through; color: #999; }
+        .empty { text-align: center; padding: 40px; color: #999; }
+        .alert { padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; }
+        .alert-success { background: #efe; color: #3c3; border: 1px solid #cfc; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="{{ url_for('index') }}" class="logo">📇 CocoCRM</a>
+        <div class="nav">
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('contacts') }}">Contacts</a>
+            <a href="{{ url_for('pipeline') }}">Pipeline</a>
+            <a href="{{ url_for('analytics') }}">Analytics</a>
+            <a href="{{ url_for('tasks') }}" class="active">Tasks</a>
+        </div>
+        <div class="user-menu">
+            <a href="{{ url_for('logout') }}" class="btn-logout">Logout</a>
+        </div>
+    </div>
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="page-header">
+            <h1 class="page-title">✅ Tasks</h1>
+            <button class="btn-primary" onclick="openTaskModal()">+ Add Task</button>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">⏳ Pending Tasks ({{ pending_tasks|length }})</h2>
+            {% if pending_tasks %}
+                <ul class="task-list">
+                    {% for task in pending_tasks %}
+                    <li class="task-item priority-{{ task.priority }}">
+                        <input type="checkbox" class="task-checkbox" onclick="toggleTask({{ task.id }})">
+                        <div class="task-content">
+                            <div class="task-title">{{ task.title }}</div>
+                            <div class="task-meta">
+                                {% if task.due_date %}📅 Due: {{ task.due_date.strftime('%B %d, %Y') }} • {% endif %}
+                                Priority: {{ task.priority.title() }}
+                            </div>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <div class="empty">No pending tasks</div>
+            {% endif %}
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">✅ Recently Completed ({{ completed_tasks|length }})</h2>
+            {% if completed_tasks %}
+                <ul class="task-list">
+                    {% for task in completed_tasks %}
+                    <li class="task-item completed">
+                        <input type="checkbox" class="task-checkbox" checked onclick="toggleTask({{ task.id }})">
+                        <div class="task-content">
+                            <div class="task-title">{{ task.title }}</div>
+                            <div class="task-meta">Completed</div>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <div class="empty">No completed tasks yet</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Task Modal -->
+    <div id="taskModal" class="modal">
+        <div class="modal-content">
+            <h2 class="modal-title">Create New Task</h2>
+            <form action="{{ url_for('add_task') }}" method="POST">
+                <div class="form-group">
+                    <label>Title *</label>
+                    <input type="text" name="title" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="description"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Priority</label>
+                    <select name="priority">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Due Date</label>
+                    <input type="date" name="due_date">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeTaskModal()">Cancel</button>
+                    <button type="submit" class="btn-primary">Create Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function openTaskModal() {
+            document.getElementById('taskModal').classList.add('active');
+        }
+
+        function closeTaskModal() {
+            document.getElementById('taskModal').classList.remove('active');
+        }
+
+        // Close modal on outside click
+        document.getElementById('taskModal').addEventListener('click', function(e) {
+            if (e.target === this) closeTaskModal();
+        });
+
+        function toggleTask(taskId) {
+            fetch('/tasks/toggle/' + taskId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
