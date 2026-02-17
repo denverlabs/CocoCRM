@@ -434,6 +434,37 @@ def logout():
     flash('You have been logged out', 'info')
     return redirect(url_for('login'))
 
+@app.route('/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    if request.method == 'POST':
+        current_password = request.form.get('current_password')
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+
+        # Validate current password (only if user has password)
+        if current_user.password_hash and not current_user.check_password(current_password):
+            flash('Current password is incorrect', 'error')
+            return render_template('change_password.html', user=current_user)
+
+        # Validate new password
+        if new_password != confirm_password:
+            flash('New passwords do not match', 'error')
+            return render_template('change_password.html', user=current_user)
+
+        if len(new_password) < 6:
+            flash('Password must be at least 6 characters', 'error')
+            return render_template('change_password.html', user=current_user)
+
+        # Update password
+        current_user.set_password(new_password)
+        db.session.commit()
+
+        flash('Password changed successfully!', 'success')
+        return redirect(url_for('dashboard'))
+
+    return render_template('change_password.html', user=current_user)
+
 @app.route('/debug/status')
 def debug_status():
     """Debug endpoint to check configuration status"""
