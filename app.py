@@ -625,15 +625,43 @@ def telegram_webhook():
 
 
 # ========== REST API FOR OPENCLAW INTEGRATION ==========
+# API Key Configuration - supports OPENCLAW_API_KEY or fallback to TELEGRAM_API_KEY
+OPENCLAW_API_KEY = os.environ.get('OPENCLAW_API_KEY') or os.environ.get('TELEGRAM_API_KEY', 'dev-api-key-change-me')
+
 def require_api_key(f):
-    """Decorator to require API key for REST API endpoints"""
+    """Decorator to require API key for REST API endpoints
+
+    Supports multiple authentication methods:
+    1. X-API-Key header (recommended)
+    2. Authorization: Bearer <api_key> header
+    3. api_key query parameter (less secure, use for testing only)
+    """
     from functools import wraps
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
-        expected_key = os.environ.get('TELEGRAM_API_KEY', 'dev-api-key-change-me')
-        if not api_key or api_key != expected_key:
-            return jsonify({'error': 'Invalid or missing API key'}), 401
+        api_key = None
+
+        # Method 1: X-API-Key header (recommended)
+        api_key = request.headers.get('X-API-Key')
+
+        # Method 2: Authorization Bearer header
+        if not api_key:
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                api_key = auth_header.replace('Bearer ', '').strip()
+
+        # Method 3: Query parameter (least secure)
+        if not api_key:
+            api_key = request.args.get('api_key')
+
+        # Verify API key
+        if not api_key or api_key != OPENCLAW_API_KEY:
+            return jsonify({
+                'error': 'Invalid or missing API key',
+                'hint': 'Use X-API-Key header, Authorization: Bearer header, or api_key query param',
+                'docs': 'See OPENCLAW_API.md for authentication details'
+            }), 401
+
         return f(*args, **kwargs)
     return decorated_function
 

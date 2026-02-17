@@ -4,18 +4,32 @@ Complete API documentation for integrating OpenClaw AI agent with CocoCRM.
 
 ## 🔐 Authentication
 
-All API endpoints require an API key passed in the header:
+All API endpoints require an API key. There are **3 ways** to authenticate:
 
+### Method 1: X-API-Key Header (Recommended ⭐)
 ```http
-X-API-Key: your-telegram-api-key-here
+X-API-Key: sk-openclaw-2026-your-secret-key
 ```
 
-Or as a query parameter:
-```
-?api_key=your-telegram-api-key-here
+### Method 2: Authorization Bearer Header
+```http
+Authorization: Bearer sk-openclaw-2026-your-secret-key
 ```
 
-**API Key Location:** Set `TELEGRAM_API_KEY` environment variable in Render.
+### Method 3: Query Parameter (Testing only ⚠️)
+```
+?api_key=sk-openclaw-2026-your-secret-key
+```
+
+**⚙️ Setup in Render:**
+
+Set the environment variable `OPENCLAW_API_KEY` (or `TELEGRAM_API_KEY` as fallback):
+
+```bash
+OPENCLAW_API_KEY=sk-openclaw-2026-your-secret-key-here
+```
+
+This is a **permanent API key** that never expires, perfect for bot integration.
 
 ---
 
@@ -231,14 +245,15 @@ Content-Type: application/json
 ```python
 import requests
 
-API_KEY = "kimi-claw-secure-api-key-2026"
+# ⚠️ Get this from Render environment variables
+API_KEY = "sk-openclaw-2026-your-secret-key"
 BASE_URL = "https://cococrm.onrender.com"
 
 def add_contact_to_crm(name, email, phone=None, company=None):
-    """Add a contact to CocoCRM"""
+    """Add a contact to CocoCRM using permanent API key"""
     response = requests.post(
         f"{BASE_URL}/api/contacts",
-        headers={"X-API-Key": API_KEY},
+        headers={"X-API-Key": API_KEY},  # Permanent key - never expires!
         json={
             "username": "admin",
             "name": name,
@@ -256,6 +271,20 @@ result = add_contact_to_crm(
     company="Future Tech"
 )
 print(f"Contact created: {result}")
+
+# Alternative: Using Authorization Bearer header
+def add_contact_bearer(name, email):
+    """Add contact using Bearer token authentication"""
+    response = requests.post(
+        f"{BASE_URL}/api/contacts",
+        headers={"Authorization": f"Bearer {API_KEY}"},
+        json={
+            "username": "admin",
+            "name": name,
+            "email": email
+        }
+    )
+    return response.json()
 ```
 
 ### Example 2: Create Task from User Request
